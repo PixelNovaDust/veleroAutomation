@@ -1,12 +1,118 @@
 import logging
 import os
+import sys
 from datetime import datetime
+
+from colorama import Fore, Style, just_fix_windows_console
+
+
+just_fix_windows_console()
+
+
+SUCCESS_LEVEL = 25
+SKIPPED_LEVEL = 35
+
+logging.addLevelName(SUCCESS_LEVEL, "SUCCESS")
+logging.addLevelName(SKIPPED_LEVEL, "SKIPPED")
+
+
+def success(self, message, *args, **kwargs):
+    if self.isEnabledFor(SUCCESS_LEVEL):
+        self._log(
+            SUCCESS_LEVEL,
+            message,
+            args,
+            **kwargs
+        )
+
+
+def skipped(self, message, *args, **kwargs):
+    if self.isEnabledFor(SKIPPED_LEVEL):
+        self._log(
+            SKIPPED_LEVEL,
+            message,
+            args,
+            **kwargs
+        )
+
+
+logging.Logger.success = success
+logging.Logger.skipped = skipped
+
+def format_context(value):
+    return "{:<12}".format(str(value)[:12])
+
+
+class ConsoleFormatter(logging.Formatter):
+
+    def format(self, record):
+
+        timestamp = datetime.fromtimestamp(
+            record.created
+        ).strftime("%Y-%m-%d %H:%M:%S")
+
+        level = record.levelname
+
+        message = record.getMessage()
+
+        if (
+            level == "INFO"
+            and message.startswith(
+                "Starting Velero Automation"
+            )
+        ):
+            color = Fore.MAGENTA
+
+        elif level == "INFO":
+            color = Fore.YELLOW
+
+        elif level == "DEBUG":
+            color = Fore.CYAN
+
+        elif level == "SUCCESS":
+            color = Fore.GREEN
+
+        elif level == "SKIPPED":
+            color = Fore.YELLOW
+
+        elif level == "ERROR":
+            color = Fore.RED
+
+        else:
+            color = Fore.WHITE
+
+        return (
+            color +
+            "{} | {:7} | {}".format(
+                timestamp,
+                level,
+                message
+            ) +
+            Style.RESET_ALL
+        )
+
+
+class FileFormatter(logging.Formatter):
+
+    def format(self, record):
+
+        timestamp = datetime.fromtimestamp(
+            record.created
+        ).strftime("%Y-%m-%d %H:%M:%S")
+
+        return "{} | {:7} | {}".format(
+            timestamp,
+            record.levelname,
+            record.getMessage()
+        )
 
 
 def setup_logger():
 
     project_root = os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__))
+        os.path.dirname(
+            os.path.abspath(__file__)
+        )
     )
 
     log_directory = os.path.join(
@@ -14,7 +120,10 @@ def setup_logger():
         "logs"
     )
 
-    os.makedirs(log_directory, exist_ok=True)
+    os.makedirs(
+        log_directory,
+        exist_ok=True
+    )
 
     log_file = os.path.join(
         log_directory,
@@ -23,67 +132,40 @@ def setup_logger():
 
     today = datetime.now().date()
 
-    # Check whether the current log already belongs to today.
-    needs_new_log = True
-
     if os.path.exists(log_file):
 
         modified_date = datetime.fromtimestamp(
             os.path.getmtime(log_file)
         ).date()
 
-        if modified_date == today:
-            needs_new_log = False
+        if modified_date != today:
 
-        else:
-            backup_name = (
-                "velero-automation-{}.log"
-                .format(
+            backup_file = os.path.join(
+                log_directory,
+                "velero-automation-{}.log".format(
                     modified_date.strftime("%Y-%m-%d")
                 )
             )
 
-            backup_file = os.path.join(
-                log_directory,
-                backup_name
+            if os.path.exists(backup_file):
+                os.remove(backup_file)
+
+            os.rename(
+                log_file,
+                backup_file
             )
 
-            # If a backup for that date already exists,
-            # don't overwrite it.
-            if not os.path.exists(backup_file):
-
-                os.rename(
-                    log_file,
-                    backup_file
-                )
-
-            else:
-
-                # Backup already exists.
-                # Remove the current log so today's
-                # execution can start fresh.
-                os.remove(log_file)
-
-    # Create a fresh log file when required.
-    if needs_new_log and not os.path.exists(log_file):
-
-        open(
-            log_file,
-            "w",
-            encoding="utf-8"
-        ).close()
-
     logger = logging.getLogger("velero")
-    logger.setLevel(logging.INFO)
 
-    # Prevent duplicate handlers if setup_logger()
-    # is called more than once.
+    logger.setLevel(
+        logging.DEBUG
+    )
+
+    logger.propagate = False
+
+    # Prevent duplicate handlers
     if logger.handlers:
         return logger
-
-    formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(message)s"
-    )
 
     file_handler = logging.FileHandler(
         log_file,
@@ -91,8 +173,32 @@ def setup_logger():
         encoding="utf-8"
     )
 
-    file_handler.setFormatter(formatter)
+    file_handler.setLevel(
+        logging.DEBUG
+    )
 
-    logger.addHandler(file_handler)
+    file_handler.setFormatter(
+        FileFormatter()
+    )
+
+    console_handler = logging.StreamHandler(
+        sys.stdout
+    )
+
+    console_handler.setLevel(
+        logging.DEBUG
+    )
+
+    console_handler.setFormatter(
+        ConsoleFormatter()
+    )
+
+    logger.addHandler(
+        file_handler
+    )
+
+    logger.addHandler(
+        console_handler
+    )
 
     return logger

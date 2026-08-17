@@ -1,21 +1,13 @@
-import msvcrt
 from datetime import datetime
 
 from app.config import load_config
 from app.excel import ExcelManager
 from app.processor import VeleroProcessor
-from app.console import startup, error, summary
-from app.logger import setup_logger
+from app.console import startup, wait_for_exit
+from app.logger import setup_logger, format_context
 
 from app.pagerduty.client import PagerDutyClient
 from app.pagerduty.incidents import PagerDutyIncidents
-
-
-def wait_for_exit():
-
-    print()
-    print("Press any key to exit...")
-    msvcrt.getch()
 
 
 def main():
@@ -24,77 +16,63 @@ def main():
 
     try:
 
-        startup()
-
-        logger.info(
-            "Velero automation started."
-        )
+        startup(logger)
 
         execution_time = datetime.now()
+
+        logger.info(
+            "Started at  : %s",
+            execution_time.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        )
 
         config = load_config()
 
         file_path = config["excel"]["file_path"]
         table_name = config["excel"]["table_name"]
 
-        print(
-            "Last performed at : {}".format(
-                execution_time.strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-            )
+        logger.info(
+            "Using Excel file   : %s",
+            file_path
         )
 
-        print(
-            "Excel file        : {}".format(
-                file_path
-            )
+        logger.info(
+            "Excel Table        : %s",
+            table_name
         )
-
-        print(
-            "Excel table       : {}".format(
-                table_name
-            )
-        )
-
-        print()
-
+        
+        # Excel validation
         excel_manager = ExcelManager(
             file_path=file_path,
             table_name=table_name
         )
 
-        print("Validating Excel file...")
-
         excel_manager.validate_file()
 
-        print("  ✓ Excel file, table and columns validated.")
-
-        logger.info(
-            "Excel file validated successfully: %s",
-            file_path
+        logger.debug(
+            "Excel file, table and columns validated"
         )
-
+        
+        # PagerDuty validation
         pagerduty_client = PagerDutyClient(
             config=config,
             logger=logger
         )
 
-        print("Validating PagerDuty API...")
-
         pagerduty_client.validate_connection()
 
-        print("  ✓ PagerDuty API is accessible.")
-
-        logger.info(
-            "PagerDuty API validated successfully."
+        logger.debug(
+            "PagerDuty API is accessible"
         )
-
+        
+        # PagerDuty incident manager
         pagerduty_incidents = PagerDutyIncidents(
             client=pagerduty_client,
             logger=logger
         )
-
+        
+        # Processor
         processor = VeleroProcessor(
             excel_manager=excel_manager,
             config=config,
@@ -102,32 +80,33 @@ def main():
             logger=logger
         )
 
-
         result = processor.process()
-
-        summary(
-            processed_count=result["processed"],
-            failed_count=result["failed"],
-            skipped_count=result["skipped"]
+        
+        # Summary
+        logger.debug(
+            "Velero automation completed!"
         )
 
         logger.info(
-            "Velero automation completed. "
-            "Processed=%s Failed=%s Skipped=%s",
+            "%s | Processed: %d :::: Skipped: %d :::: Failed: %d",
+            format_context("Summary"),
             result["processed"],
-            result["failed"],
-            result["skipped"]
-        )
+            result["skipped"],
+            result["failed"]
+        )       
 
-        wait_for_exit()
+        logger.info(
+            "Bye!"
+        )
 
     except Exception as exception:
 
-        logger.exception(
-            "Velero automation failed."
+        logger.error(
+            "%s",
+            exception
         )
 
-        error(str(exception))
+    finally:
 
         wait_for_exit()
 

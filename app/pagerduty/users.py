@@ -11,7 +11,11 @@ class PagerDutyUsers:
     def find_user(self, caller):
 
         if not caller:
-            raise PagerDutyError("Caller is empty.")
+            raise PagerDutyError(
+                "Caller is empty."
+            )
+
+        caller = caller.strip()
 
         response = self.client.request(
             "GET",
@@ -22,48 +26,39 @@ class PagerDutyUsers:
             }
         )
 
-        users = response.json().get("users", [])
-
-        if not users:
-
-            raise PagerDutyError(
-                "PagerDuty user not found: {}".format(
-                    caller
-                )
-            )
+        users = response.json().get(
+            "users",
+            []
+        )
 
         exact_matches = [
-            user for user in users
-            if user.get("name", "").strip().lower()
-            == caller.strip().lower()
+            user
+            for user in users
+            if user.get("name", "") == caller
         ]
 
         if len(exact_matches) == 1:
 
             user = exact_matches[0]
 
-            self.logger.info(
-                "PagerDuty user found: %s (%s)",
+            self.logger.debug(
+                "Caller matched exactly: %s (%s)",
                 user["name"],
                 user["id"]
             )
 
             return user
 
-        if len(users) == 1:
+        if not exact_matches:
 
-            user = users[0]
-
-            self.logger.info(
-                "PagerDuty user found: %s (%s)",
-                user["name"],
-                user["id"]
+            raise PagerDutyError(
+                "Exact PagerDuty user not found: {}".format(
+                    caller
+                )
             )
-
-            return user
 
         raise PagerDutyError(
-            "Multiple PagerDuty users matched: {}".format(
+            "Multiple exact PagerDuty users found: {}".format(
                 caller
             )
         )

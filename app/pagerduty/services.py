@@ -55,20 +55,8 @@ class PagerDutyServices:
 
             return service
 
-        if len(services) == 1:
-
-            service = services[0]
-
-            self.logger.info(
-                "PagerDuty service found: %s (%s)",
-                service["name"],
-                service["id"]
-            )
-
-            return service
-
         raise PagerDutyError(
-            "Multiple PagerDuty services matched: {}".format(
+            "Exact PagerDuty service not found: {}".format(
                 namespace
             )
-        )
+)
