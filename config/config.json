@@ -1,0 +1,17 @@
+{
+    "excel": {
+        "file_path": "%USERPROFILE%\\OneDrive - PTC\\Velero_Automate_P1.xlsx",
+        "table_name": "Velero_Test"
+    },
+    "processing": {
+        "processed_value": "Yes",
+        "failed_value": "No"
+    },
+    "pagerduty": {
+        "enabled": true,
+        "base_url": "https://api.pagerduty.com",
+        "api_token": "%VELERO_PAGERDUTY_TOKEN%",
+        "urgency": "low",
+        "priority_id": ""
+    }
+}
