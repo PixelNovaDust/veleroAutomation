@@ -1,4 +1,28 @@
+import time
+
 import requests
+
+from app.logger import file_only
+from app.paths import has_unresolved_variable
+
+
+RETRYABLE_STATUS_CODES = (429, 500, 502, 503, 504)
+
+
+def _number(value, default, cast=int):
+    """
+    Read a numeric setting while still honouring a configured
+    zero, which a plain `or` fallback would discard.
+    """
+
+    if value is None or value == "":
+        return default
+
+    try:
+        return cast(value)
+
+    except (TypeError, ValueError):
+        return default
 
 
 class PagerDutyError(Exception):
@@ -21,7 +45,36 @@ class PagerDutyClient:
         self.urgency = pd_config.get("urgency", "low")
         self.priority_id = pd_config.get("priority_id")
 
+        self.timeout_seconds = _number(
+            pd_config.get("timeout_seconds"),
+            30
+        )
+
+        self.max_retries = _number(
+            pd_config.get("max_retries"),
+            3
+        )
+
+        self.retry_delay_seconds = _number(
+            pd_config.get("retry_delay_seconds"),
+            2,
+            float
+        )
+
         self.logger = logger
+
+        # An unset environment variable leaves the placeholder
+        # behind, which would otherwise surface as a puzzling
+        # HTTP 401 much later in the run.
+        if has_unresolved_variable(self.api_token):
+
+            raise PagerDutyError(
+                "PagerDuty API token is not set. The environment "
+                "variable in pagerduty.api_token ({}) is empty "
+                "on this machine.".format(
+                    self.api_token
+                )
+            )
 
         self.session = requests.Session()
 
@@ -35,70 +88,102 @@ class PagerDutyClient:
 
     def validate_connection(self):
 
-      if not self.enabled:
-          return True
+        if not self.enabled:
 
-      if not self.api_token:
-          raise PagerDutyError(
-              "PagerDuty API token is not configured."
-          )
+            self.logger.warning(
+                "PagerDuty is disabled in the configuration, "
+                "no incident will be raised."
+            )
 
-      try:
+            return True
 
-          response = self.request(
-              "GET",
-              "/users/me"
-          )
+        if not self.api_token:
+            raise PagerDutyError(
+                "PagerDuty API token is not configured."
+            )
 
-          user = response.json().get("user")
+        try:
 
-          if not user:
-              raise PagerDutyError(
-                  "PagerDuty API responded successfully, "
-                  "but user information was not returned."
-              )
+            response = self.request(
+                "GET",
+                "/users/me"
+            )
 
-          return True
+            user = response.json().get("user")
 
-      except PagerDutyError:
-          raise
+            if not user:
+                raise PagerDutyError(
+                    "PagerDuty API responded successfully, "
+                    "but user information was not returned."
+                )
 
-      except Exception as error:
+            self.logger.debug(
+                "Pagerduty API is accessible"
+            )
 
-          self.logger.exception(
-              "PagerDuty API validation failed."
-          )
+            self.logger.debug(
+                "PagerDuty token belongs to %s <%s>",
+                user.get("name"),
+                user.get("email"),
+                extra=file_only()
+            )
 
-          raise PagerDutyError(
-              "PagerDuty API validation failed: {}".format(
-                  error
-              )
-          )
-    
+            return True
+
+        except PagerDutyError:
+            raise
+
+        except Exception as error:
+
+            self.logger.exception(
+                "PagerDuty API validation failed."
+            )
+
+            raise PagerDutyError(
+                "PagerDuty API validation failed: {}".format(
+                    error
+                )
+            )
+
+
     def request(self, method, endpoint, **kwargs):
 
         url = self.base_url + endpoint
 
-        try:
+        attempts = max(1, self.max_retries)
 
-            response = self.session.request(
-                method,
-                url,
-                timeout=30,
-                **kwargs
-            )
+        for attempt in range(1, attempts + 1):
 
-        except requests.RequestException as error:
+            last_attempt = attempt == attempts
 
-            self.logger.exception(
-                "PagerDuty connection failed"
-            )
+            try:
 
-            raise PagerDutyError(
-                "PagerDuty connection failed: {}".format(
-                    error
+                response = self.session.request(
+                    method,
+                    url,
+                    timeout=self.timeout_seconds,
+                    **kwargs
                 )
-            )
+
+            except requests.RequestException as error:
+
+                self.logger.exception(
+                    "PagerDuty connection failed"
+                )
+
+                raise PagerDutyError(
+                    "PagerDuty connection failed: {}".format(
+                        error
+                    )
+                )
+
+            if last_attempt:
+                break
+
+            if not self._should_retry(method, response):
+                break
+
+            self._pause(response, attempt, attempts)
 
         if not response.ok:
 
@@ -119,3 +204,43 @@ class PagerDutyClient:
             )
 
         return response
+
+    def _should_retry(self, method, response):
+        """
+        Rate limiting is always safe to retry. A server error is
+        only retried for reads, because a repeated POST could
+        raise the same incident twice.
+        """
+
+        if response.status_code == 429:
+            return True
+
+        if str(method).upper() != "GET":
+            return False
+
+        return response.status_code in RETRYABLE_STATUS_CODES
+
+    def _pause(self, response, attempt, attempts):
+
+        delay_seconds = self.retry_delay_seconds * attempt
+
+        retry_after = response.headers.get("Retry-After")
+
+        if retry_after:
+
+            try:
+                delay_seconds = float(retry_after)
+
+            except ValueError:
+                pass
+
+        self.logger.warning(
+            "PagerDuty returned HTTP %s, retrying in %ss "
+            "(attempt %d of %d)",
+            response.status_code,
+            int(delay_seconds),
+            attempt,
+            attempts
+        )
+
+        time.sleep(max(0, delay_seconds))

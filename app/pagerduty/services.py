@@ -8,12 +8,41 @@ class PagerDutyServices:
         self.client = client
         self.logger = logger
 
+        # One lookup per distinct namespace in a run.
+        self.cache = {}
+
     def find_service(self, namespace):
 
         if not namespace:
             raise PagerDutyError(
                 "Namespace is empty."
             )
+
+        cache_key = namespace.strip().lower()
+
+        if cache_key in self.cache:
+
+            cached = self.cache[cache_key]
+
+            if isinstance(cached, str):
+                raise PagerDutyError(cached)
+
+            return cached
+
+        try:
+            service = self._lookup(namespace)
+
+        except PagerDutyError as error:
+
+            self.cache[cache_key] = str(error)
+
+            raise
+
+        self.cache[cache_key] = service
+
+        return service
+
+    def _lookup(self, namespace):
 
         response = self.client.request(
             "GET",

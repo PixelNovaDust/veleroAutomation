@@ -1,17 +1,47 @@
 {
     "excel": {
         "file_path": "%USERPROFILE%\\OneDrive - PTC\\Velero_Automate_P1.xlsx",
-        "table_name": "Velero_Test"
+        "table_name": "Velero_Test",
+        "save_retry_attempts": 5,
+        "save_retry_delay_seconds": 3,
+        "safe_save": true,
+        "close_local_workbook": true,
+        "confirm_before_close": true,
+        "warn_when_opened_by_others": true,
+        "backup": {
+            "enabled": true,
+            "directory": "backups",
+            "retention_days": 14
+        }
     },
     "processing": {
         "processed_value": "Yes",
-        "failed_value": "No"
+        "failed_value": "No",
+        "ledger": {
+            "enabled": true,
+            "file_path": "data/processed-ledger.json",
+            "restore_missing": true,
+            "retention_days": 90
+        }
+    },
+    "logging": {
+        "directory": "logs",
+        "file_name": "velero-automation.log",
+        "level": "DEBUG",
+        "console_level": "DEBUG",
+        "retention_days": 14
+    },
+    "console": {
+        "pause_on_exit": true
     },
     "pagerduty": {
         "enabled": true,
         "base_url": "https://api.pagerduty.com",
         "api_token": "%VELERO_PAGERDUTY_TOKEN%",
         "urgency": "low",
-        "priority_id": ""
+        "priority_id": "",
+        "timeout_seconds": 30,
+        "max_retries": 3,
+        "retry_delay_seconds": 2
     }
 }

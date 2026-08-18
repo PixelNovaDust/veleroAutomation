@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+
+.scratch
+.venv-check
+venv/
+
+build/
+dist/
+
+logs/
+backups/
+data/
+
+~$*.xls*

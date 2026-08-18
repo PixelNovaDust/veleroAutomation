@@ -1,6 +1,25 @@
 from datetime import datetime
 
-from app.logger import format_context
+from app.logger import file_only, format_context
+
+
+def _as_date(value):
+    """Keep a restored date a real date so the cell format holds."""
+
+    if isinstance(value, datetime):
+        return value
+
+    if not value:
+        return value
+
+    try:
+        return datetime.strptime(
+            str(value),
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+    except ValueError:
+        return value
 
 
 class VeleroProcessor:
@@ -10,12 +29,14 @@ class VeleroProcessor:
         excel_manager,
         config,
         pagerduty_client,
-        logger
+        logger,
+        ledger=None
     ):
         self.excel_manager = excel_manager
         self.config = config
         self.pagerduty_client = pagerduty_client
         self.logger = logger
+        self.ledger = ledger
 
     def process(self):
 
@@ -63,6 +84,11 @@ class VeleroProcessor:
             caller = sheet.cell(
                 row=row_number,
                 column=headers["Caller"]
+            ).value
+
+            backup_date = sheet.cell(
+                row=row_number,
+                column=headers["Date"]
             ).value
 
             incident_id = sheet.cell(
@@ -122,11 +148,38 @@ class VeleroProcessor:
 
                 skipped_count += 1
 
+                self._remember(
+                    namespace,
+                    backup_date,
+                    incident_id,
+                    incident_date,
+                    source="sheet"
+                )
+
                 self.logger.skipped(
                     "%s | Already processed on %s",
                     context,
                     incident_date
                 )
+
+                continue
+
+            # Processed in an earlier run whose values were lost
+            # from the sheet, most likely by another engineer's
+            # open session overwriting them.
+            recovered = self._recover(
+                sheet,
+                headers,
+                row_number,
+                namespace,
+                backup_date,
+                processed_value,
+                context
+            )
+
+            if recovered:
+
+                skipped_count += 1
 
                 continue
 
@@ -175,6 +228,25 @@ class VeleroProcessor:
 
                 current_time = datetime.now()
 
+                # Recorded before the workbook is touched, so a
+                # failure to write the sheet can never turn into
+                # a duplicate incident on the next run.
+                self._remember(
+                    namespace,
+                    backup_date,
+                    real_incident_id,
+                    current_time
+                )
+
+                processed_count += 1
+
+                self.logger.success(
+                    "%s | Incident Triggered to %s - %s",
+                    context,
+                    caller,
+                    real_incident_id
+                )
+
                 # Incident ID
                 sheet.cell(
                     row=row_number,
@@ -194,21 +266,24 @@ class VeleroProcessor:
                 ).value = current_time
 
                 # Save successful processing
-                self.excel_manager.save()
+                try:
 
-                processed_count += 1
+                    self.excel_manager.save()
 
-                self.logger.success(
-                    "%s | Incident Triggered to %s - %s",
-                    context,
-                    caller,
-                    real_incident_id
-                )
+                    self.logger.info(
+                        "%s | Sheet updated",
+                        context
+                    )
 
-                self.logger.info(
-                    "%s | Sheet updated",
-                    context
-                )
+                except Exception as save_error:
+
+                    self.logger.error(
+                        "%s | Incident %s was raised but the "
+                        "sheet could not be updated: %s",
+                        context,
+                        real_incident_id,
+                        save_error
+                    )
 
             except Exception as exception:
 
@@ -236,16 +311,129 @@ class VeleroProcessor:
                     column=headers["Incident Comment"]
                 ).value = error_message
 
-                self.excel_manager.save()
-
                 self.logger.error(
                     "%s | %s",
                     context,
                     error_message
                 )
 
+                self.logger.debug(
+                    "%s | Failure detail",
+                    context,
+                    exc_info=True,
+                    extra=file_only()
+                )
+
+                try:
+                    self.excel_manager.save()
+
+                except Exception as save_error:
+
+                    self.logger.error(
+                        "%s | Failure could not be written to "
+                        "the sheet: %s",
+                        context,
+                        save_error
+                    )
+
         return {
             "processed": processed_count,
             "failed": failed_count,
             "skipped": skipped_count
         }
+
+    def _remember(
+        self,
+        namespace,
+        backup_date,
+        incident_id,
+        incident_date,
+        source="automation"
+    ):
+
+        if not self.ledger or not incident_id:
+            return
+
+        self.ledger.record(
+            namespace=namespace,
+            date_value=backup_date,
+            incident_id=incident_id,
+            incident_date=incident_date,
+            source=source
+        )
+
+        self.ledger.save()
+
+    def _recover(
+        self,
+        sheet,
+        headers,
+        row_number,
+        namespace,
+        backup_date,
+        processed_value,
+        context
+    ):
+        """
+        Put back the incident details of a row this automation
+        already handled, and report it as skipped.
+        """
+
+        if not self.ledger:
+            return False
+
+        entry = self.ledger.find(namespace, backup_date)
+
+        if not entry:
+            return False
+
+        known_id = entry.get("incident_id")
+        known_date = entry.get("incident_date")
+
+        if not self.ledger.restore_missing:
+
+            self.logger.skipped(
+                "%s | Already triggered as %s on %s, "
+                "sheet no longer shows it",
+                context,
+                known_id,
+                known_date
+            )
+
+            return True
+
+        sheet.cell(
+            row=row_number,
+            column=headers["Incident ID"]
+        ).value = known_id
+
+        sheet.cell(
+            row=row_number,
+            column=headers["Processed"]
+        ).value = processed_value
+
+        sheet.cell(
+            row=row_number,
+            column=headers["Incident Date"]
+        ).value = _as_date(known_date)
+
+        self.logger.skipped(
+            "%s | Already triggered as %s on %s, "
+            "restored into the sheet",
+            context,
+            known_id,
+            known_date
+        )
+
+        try:
+            self.excel_manager.save()
+
+        except Exception as save_error:
+
+            self.logger.error(
+                "%s | Restored details could not be written: %s",
+                context,
+                save_error
+            )
+
+        return True

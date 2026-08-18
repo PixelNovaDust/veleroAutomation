@@ -8,6 +8,10 @@ class PagerDutyUsers:
         self.client = client
         self.logger = logger
 
+        # One lookup per distinct caller in a run. A workbook
+        # routinely repeats the same caller across rows.
+        self.cache = {}
+
     def find_user(self, caller):
 
         if not caller:
@@ -16,6 +20,32 @@ class PagerDutyUsers:
             )
 
         caller = caller.strip()
+
+        cache_key = caller.lower()
+
+        if cache_key in self.cache:
+
+            cached = self.cache[cache_key]
+
+            if isinstance(cached, str):
+                raise PagerDutyError(cached)
+
+            return cached
+
+        try:
+            user = self._lookup(caller)
+
+        except PagerDutyError as error:
+
+            self.cache[cache_key] = str(error)
+
+            raise
+
+        self.cache[cache_key] = user
+
+        return user
+
+    def _lookup(self, caller):
 
         response = self.client.request(
             "GET",
