@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from app.config import load_config
 from app.excel import ExcelManager
 from app.processor import VeleroProcessor
@@ -18,15 +16,6 @@ def main():
 
         startup(logger)
 
-        execution_time = datetime.now()
-
-        logger.info(
-            "Started at  : %s",
-            execution_time.strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-        )
-
         config = load_config()
 
         file_path = config["excel"]["file_path"]
@@ -41,7 +30,7 @@ def main():
             "Excel Table        : %s",
             table_name
         )
-        
+
         # Excel validation
         excel_manager = ExcelManager(
             file_path=file_path,
@@ -53,7 +42,7 @@ def main():
         logger.debug(
             "Excel file, table and columns validated"
         )
-        
+
         # PagerDuty validation
         pagerduty_client = PagerDutyClient(
             config=config,
@@ -62,16 +51,12 @@ def main():
 
         pagerduty_client.validate_connection()
 
-        logger.debug(
-            "PagerDuty API is accessible"
-        )
-        
         # PagerDuty incident manager
         pagerduty_incidents = PagerDutyIncidents(
             client=pagerduty_client,
             logger=logger
         )
-        
+
         # Processor
         processor = VeleroProcessor(
             excel_manager=excel_manager,
@@ -81,9 +66,8 @@ def main():
         )
 
         result = processor.process()
-        
-        # Summary
-        logger.debug(
+
+        logger.info(
             "Velero automation completed!"
         )
 
@@ -93,7 +77,7 @@ def main():
             result["processed"],
             result["skipped"],
             result["failed"]
-        )       
+        )
 
         logger.info(
             "Bye!"

@@ -35,59 +35,46 @@ class PagerDutyClient:
 
     def validate_connection(self):
 
-        if not self.enabled:
-            self.logger.warning(
-                "PagerDuty integration is disabled."
-            )
-            return True
+      if not self.enabled:
+          return True
 
-        if not self.api_token:
-            raise PagerDutyError(
-                "PagerDuty API token is not configured."
-            )
+      if not self.api_token:
+          raise PagerDutyError(
+              "PagerDuty API token is not configured."
+          )
 
-        self.logger.info(
-            "Validating PagerDuty API connection..."
-        )
+      try:
 
-        try:
-            response = self.request(
-                "GET",
-                "/users/me"
-            )
+          response = self.request(
+              "GET",
+              "/users/me"
+          )
 
-            user = response.json().get("user")
+          user = response.json().get("user")
 
-            if not user:
-                raise PagerDutyError(
-                    "PagerDuty API responded successfully, "
-                    "but user information was not returned."
-                )
+          if not user:
+              raise PagerDutyError(
+                  "PagerDuty API responded successfully, "
+                  "but user information was not returned."
+              )
 
-            self.logger.info(
-                "PagerDuty API connection successful. "
-                "Authenticated as: %s (%s)",
-                user.get("name"),
-                user.get("email")
-            )
+          return True
 
-            return True
+      except PagerDutyError:
+          raise
 
-        except PagerDutyError:
-            raise
+      except Exception as error:
 
-        except Exception as error:
+          self.logger.exception(
+              "PagerDuty API validation failed."
+          )
 
-            self.logger.exception(
-                "PagerDuty API validation failed."
-            )
-
-            raise PagerDutyError(
-                "PagerDuty API validation failed: {}".format(
-                    error
-                )
-            )
-
+          raise PagerDutyError(
+              "PagerDuty API validation failed: {}".format(
+                  error
+              )
+          )
+    
     def request(self, method, endpoint, **kwargs):
 
         url = self.base_url + endpoint
@@ -123,12 +110,6 @@ class PagerDutyClient:
                 )
             except ValueError:
                 message = response.text
-
-            self.logger.error(
-                "PagerDuty API error %s: %s",
-                response.status_code,
-                message
-            )
 
             raise PagerDutyError(
                 "PagerDuty API returned HTTP {}: {}".format(

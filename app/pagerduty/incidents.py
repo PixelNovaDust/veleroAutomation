@@ -62,6 +62,8 @@ class PagerDutyIncidents:
 
             "urgency": self.client.urgency,
 
+            "status": "triggered",
+
             "assignments": [
                 {
                     "assignee": {
@@ -106,11 +108,6 @@ class PagerDutyIncidents:
             )
 
         incident_id = incident_data.get("id")
-
-        self.logger.info(
-            "PagerDuty incident created: %s",
-            incident_id
-        )
 
         return {
             "success": True,

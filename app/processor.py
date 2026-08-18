@@ -1,5 +1,7 @@
 from datetime import datetime
+
 from app.logger import format_context
+
 
 class VeleroProcessor:
 
@@ -48,6 +50,11 @@ class VeleroProcessor:
                 column=headers["Namespace"]
             ).value
 
+            environment = sheet.cell(
+                row=row_number,
+                column=headers["Prod/Non-Prod"]
+            ).value
+
             status = sheet.cell(
                 row=row_number,
                 column=headers["Status"]
@@ -73,12 +80,37 @@ class VeleroProcessor:
                 column=headers["Incident Date"]
             ).value
 
+            incident_comment = sheet.cell(
+                row=row_number,
+                column=headers["Incident Comment"]
+            ).value
+
+            context = format_context(namespace)
+
             # Empty row
             if (
                 not namespace
                 and not caller
                 and not status
+                and not environment
             ):
+                continue
+
+            # Skip decom rows
+            if (
+                incident_comment
+                and "decom" in str(
+                    incident_comment
+                ).lower()
+            ):
+
+                skipped_count += 1
+
+                self.logger.skipped(
+                    "%s | Decom mentioned in comment",
+                    context
+                )
+
                 continue
 
             # Already processed
@@ -92,7 +124,7 @@ class VeleroProcessor:
 
                 self.logger.skipped(
                     "%s | Already processed on %s",
-                    format_context(namespace),
+                    context,
                     incident_date
                 )
 
@@ -102,7 +134,7 @@ class VeleroProcessor:
 
                 self.logger.info(
                     "%s | Initialized process",
-                    format_context(namespace)
+                    context
                 )
 
                 # Required fields
@@ -161,24 +193,21 @@ class VeleroProcessor:
                     column=headers["Incident Date"]
                 ).value = current_time
 
-                # IMPORTANT:
-                # Incident Comment is NOT updated
-                # on successful processing.
+                # Save successful processing
+                self.excel_manager.save()
 
                 processed_count += 1
 
                 self.logger.success(
                     "%s | Incident Triggered to %s - %s",
-                    format_context(namespace),
+                    context,
                     caller,
                     real_incident_id
                 )
 
-                self.excel_manager.save()
-
                 self.logger.info(
-                    "%s | Updated in Sheet",
-                    format_context(namespace)
+                    "%s | Sheet updated",
+                    context
                 )
 
             except Exception as exception:
@@ -191,7 +220,6 @@ class VeleroProcessor:
 
                 current_time = datetime.now()
 
-                # Failed processing
                 sheet.cell(
                     row=row_number,
                     column=headers["Processed"]
@@ -212,7 +240,7 @@ class VeleroProcessor:
 
                 self.logger.error(
                     "%s | %s",
-                    format_context(namespace),
+                    context,
                     error_message
                 )
 

@@ -31,6 +31,7 @@ class PagerDutyUsers:
             []
         )
 
+        # Exact caller-name match.
         exact_matches = [
             user
             for user in users
@@ -38,27 +39,17 @@ class PagerDutyUsers:
         ]
 
         if len(exact_matches) == 1:
-
-            user = exact_matches[0]
-
-            self.logger.debug(
-                "Caller matched exactly: %s (%s)",
-                user["name"],
-                user["id"]
-            )
-
-            return user
+            return exact_matches[0]
 
         if not exact_matches:
-
             raise PagerDutyError(
-                "Exact PagerDuty user not found: {}".format(
+                "User not found: {}".format(
                     caller
                 )
             )
 
         raise PagerDutyError(
-            "Multiple exact PagerDuty users found: {}".format(
+            "Multiple exact users found: {}".format(
                 caller
             )
         )

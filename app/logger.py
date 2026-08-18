@@ -18,29 +18,26 @@ logging.addLevelName(SKIPPED_LEVEL, "SKIPPED")
 
 def success(self, message, *args, **kwargs):
     if self.isEnabledFor(SUCCESS_LEVEL):
-        self._log(
-            SUCCESS_LEVEL,
-            message,
-            args,
-            **kwargs
-        )
+        self._log(SUCCESS_LEVEL, message, args, **kwargs)
 
 
 def skipped(self, message, *args, **kwargs):
     if self.isEnabledFor(SKIPPED_LEVEL):
-        self._log(
-            SKIPPED_LEVEL,
-            message,
-            args,
-            **kwargs
-        )
+        self._log(SKIPPED_LEVEL, message, args, **kwargs)
 
 
 logging.Logger.success = success
 logging.Logger.skipped = skipped
 
+
 def format_context(value):
     return "{:<12}".format(str(value)[:12])
+
+
+class ConsoleFilter(logging.Filter):
+
+    def filter(self, record):
+        return getattr(record, "console", True)
 
 
 class ConsoleFormatter(logging.Formatter):
@@ -52,7 +49,6 @@ class ConsoleFormatter(logging.Formatter):
         ).strftime("%Y-%m-%d %H:%M:%S")
 
         level = record.levelname
-
         message = record.getMessage()
 
         if (
@@ -157,13 +153,9 @@ def setup_logger():
 
     logger = logging.getLogger("velero")
 
-    logger.setLevel(
-        logging.DEBUG
-    )
-
+    logger.setLevel(logging.DEBUG)
     logger.propagate = False
 
-    # Prevent duplicate handlers
     if logger.handlers:
         return logger
 
@@ -173,32 +165,18 @@ def setup_logger():
         encoding="utf-8"
     )
 
-    file_handler.setLevel(
-        logging.DEBUG
-    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(FileFormatter())
 
-    file_handler.setFormatter(
-        FileFormatter()
-    )
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.DEBUG)
+    console_handler.setFormatter(ConsoleFormatter())
 
-    console_handler = logging.StreamHandler(
-        sys.stdout
-    )
+    # Allow detailed file-only messages
+    # to remain hidden from console.
+    console_handler.addFilter(ConsoleFilter())
 
-    console_handler.setLevel(
-        logging.DEBUG
-    )
-
-    console_handler.setFormatter(
-        ConsoleFormatter()
-    )
-
-    logger.addHandler(
-        file_handler
-    )
-
-    logger.addHandler(
-        console_handler
-    )
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
 
     return logger

@@ -29,34 +29,25 @@ class PagerDutyServices:
             []
         )
 
-        if not services:
-
-            raise PagerDutyError(
-                "PagerDuty service not found: {}".format(
-                    namespace
-                )
-            )
-
         exact_matches = [
-            service for service in services
+            service
+            for service in services
             if service.get("name", "").strip().lower()
             == namespace.strip().lower()
         ]
 
         if len(exact_matches) == 1:
+            return exact_matches[0]
 
-            service = exact_matches[0]
-
-            self.logger.info(
-                "PagerDuty service found: %s (%s)",
-                service["name"],
-                service["id"]
+        if not exact_matches:
+            raise PagerDutyError(
+                "Service not found: {}".format(
+                    namespace
+                )
             )
-
-            return service
 
         raise PagerDutyError(
-            "Exact PagerDuty service not found: {}".format(
+            "Multiple exact services found: {}".format(
                 namespace
             )
-)
+        )
