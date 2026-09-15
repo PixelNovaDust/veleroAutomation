@@ -11,7 +11,9 @@ from app.excel_lock import (
     describe_owner,
     wait_until_writable
 )
+from app.dates import dates_match, normalize_date
 from app.paths import ensure_directory, resolve_path
+from app.processing import is_processed
 
 
 REQUIRED_COLUMNS = [
@@ -23,7 +25,6 @@ REQUIRED_COLUMNS = [
     "Caller",
     "Status",
     "Final Status",
-    "Incident ID",
     "Processed",
     "Incident Date",
     "Incident Comment"
@@ -274,6 +275,66 @@ class ExcelManager:
         self.headers = headers
 
         return headers
+
+    def count_rows_for_date(self, target_date):
+        """
+        Return how many rows exist for the selected date,
+        regardless of processed status.
+        """
+
+        sheet = self.load()
+        headers = self.validate_columns()
+
+        date_column = headers["Date"]
+        count = 0
+
+        for row_number in range(2, sheet.max_row + 1):
+
+            date_value = sheet.cell(
+                row=row_number,
+                column=date_column
+            ).value
+
+            if dates_match(date_value, target_date):
+                count += 1
+
+        return count
+
+    def collect_unprocessed_dates(self, processed_value="Yes"):
+        """
+        Return distinct normalised dates that still have at least
+        one row not marked as processed.
+        """
+
+        sheet = self.load()
+        headers = self.validate_columns()
+
+        date_column = headers["Date"]
+        processed_column = headers["Processed"]
+
+        dates = set()
+
+        for row_number in range(2, sheet.max_row + 1):
+
+            processed = sheet.cell(
+                row=row_number,
+                column=processed_column
+            ).value
+
+            if is_processed(processed, processed_value):
+                continue
+
+            date_value = sheet.cell(
+                row=row_number,
+                column=date_column
+            ).value
+
+            normalized = normalize_date(date_value)
+
+            if normalized:
+                dates.add(normalized)
+
+        return sorted(dates)
 
     def save(self):
         """

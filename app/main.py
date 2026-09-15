@@ -2,7 +2,14 @@ import logging
 import sys
 
 from app.config import default_config, load_config
-from app.console import make_confirm, startup, wait_for_exit
+from app.console import (
+    log_run_start,
+    make_confirm,
+    prompt_target_date,
+    startup,
+    wait_for_exit
+)
+from app.dates import format_display_date
 from app.excel import ExcelManager
 from app.ledger import ProcessedLedger
 from app.logger import (
@@ -24,21 +31,36 @@ def main():
 
     config = None
     exit_code = 0
+    excel_manager = None
+    target_date = None
+    row_count = 0
+    result = {
+        "processed": 0,
+        "skipped": 0,
+        "failed": 0
+    }
 
     try:
-
-        startup(logger)
 
         config = load_config()
 
         log_file = attach_file_logging(logger, config)
+
+        startup(logger)
+
+        target_date = prompt_target_date(config)
+
+        logger.info(
+            "Validating the sheet"
+        )
 
         confirm = make_confirm(logger)
 
         logger.debug(
             "%s: %s",
             format_label("Configuration file"),
-            config["runtime"]["config_path"]
+            config["runtime"]["config_path"],
+            extra=file_only()
         )
 
         if log_file:
@@ -46,15 +68,17 @@ def main():
             logger.debug(
                 "%s: %s",
                 format_label("Log file"),
-                log_file
+                log_file,
+                extra=file_only()
             )
 
-        # Excel validation
         excel_manager = ExcelManager.from_config(
             config=config,
             logger=logger,
             confirm=confirm
         )
+
+        log_run_start(logger, target_date)
 
         logger.info(
             "%s: %s",
@@ -76,58 +100,94 @@ def main():
             "Excel file, table and columns validated"
         )
 
-        # PagerDuty validation
-        pagerduty_client = PagerDutyClient(
-            config=config,
-            logger=logger
+        row_count = excel_manager.count_rows_for_date(
+            target_date
         )
 
-        pagerduty_client.validate_connection()
+        if row_count == 0:
 
-        # PagerDuty incident manager
-        pagerduty_incidents = PagerDutyIncidents(
-            client=pagerduty_client,
-            logger=logger
-        )
+            exit_code = 1
 
-        # Record of incidents already raised, kept beside the
-        # workbook so a lost cell cannot become a duplicate page
-        ledger = ProcessedLedger.from_config(
-            config=config,
-            logger=logger
-        ).load()
+            logger.error(
+                "No event found for {}".format(
+                    format_display_date(target_date)
+                )
+            )
 
-        # Processor
-        processor = VeleroProcessor(
-            excel_manager=excel_manager,
-            config=config,
-            pagerduty_client=pagerduty_incidents,
-            logger=logger,
-            ledger=ledger
-        )
+        else:
 
-        result = processor.process()
+            try:
 
-        backup_path = excel_manager.create_backup()
+                pagerduty_client = PagerDutyClient(
+                    config=config,
+                    logger=logger
+                )
 
-        if backup_path:
+                pagerduty_client.validate_connection()
 
-            logger.debug(
-                "Workbook backed up to %s",
-                backup_path,
-                extra=file_only()
+                pagerduty_incidents = PagerDutyIncidents(
+                    client=pagerduty_client,
+                    logger=logger
+                )
+
+                ledger = ProcessedLedger.from_config(
+                    config=config,
+                    logger=logger
+                ).load()
+
+                processor = VeleroProcessor(
+                    excel_manager=excel_manager,
+                    config=config,
+                    pagerduty_client=pagerduty_incidents,
+                    logger=logger,
+                    ledger=ledger
+                )
+
+                result = processor.process(target_date)
+
+            except Exception as pre_process_error:
+
+                exit_code = 1
+
+                _write_pre_pagerduty_failure(
+                    excel_manager=excel_manager,
+                    config=config,
+                    logger=logger,
+                    target_date=target_date,
+                    error_message=str(pre_process_error)
+                )
+
+                logger.error(
+                    "%s",
+                    pre_process_error
+                )
+
+                logger.debug(
+                    "Run failed before row processing",
+                    exc_info=True,
+                    extra=file_only()
+                )
+
+            backup_path = excel_manager.create_backup()
+
+            if backup_path:
+
+                logger.debug(
+                    "Workbook backed up to %s",
+                    backup_path,
+                    extra=file_only()
+                )
+
+            logger.info(
+                "%s | Processed: %d :::: Skipped: %d :::: Failed: %d",
+                format_context("Summary"),
+                result["processed"],
+                result["skipped"],
+                result["failed"]
             )
 
         logger.info(
             "Velero automation completed!"
-        )
-
-        logger.info(
-            "%s | Processed: %d :::: Skipped: %d :::: Failed: %d",
-            format_context("Summary"),
-            result["processed"],
-            result["skipped"],
-            result["failed"]
         )
 
         logger.info(
@@ -138,8 +198,6 @@ def main():
 
         exit_code = 1
 
-        # A config that failed to load left the run without a log
-        # file, and that failure is exactly what needs recording.
         _ensure_file_logging(logger)
 
         logger.error(
@@ -153,6 +211,14 @@ def main():
             extra=file_only()
         )
 
+        logger.info(
+            "Velero automation completed!"
+        )
+
+        logger.info(
+            "Bye!"
+        )
+
     finally:
 
         wait_for_exit(
@@ -160,6 +226,40 @@ def main():
         )
 
     return exit_code
+
+
+def _write_pre_pagerduty_failure(
+    excel_manager,
+    config,
+    logger,
+    target_date,
+    error_message
+):
+
+    if not excel_manager or not target_date or not config:
+        return
+
+    try:
+
+        processor = VeleroProcessor(
+            excel_manager=excel_manager,
+            config=config,
+            pagerduty_client=None,
+            logger=logger,
+            ledger=None
+        )
+
+        processor.mark_unprocessed_failed(
+            target_date,
+            error_message
+        )
+
+    except Exception as write_error:
+
+        logger.error(
+            "Failure could not be written to the sheet: %s",
+            write_error
+        )
 
 
 def _ensure_file_logging(logger):

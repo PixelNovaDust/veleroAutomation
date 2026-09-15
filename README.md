@@ -7,8 +7,9 @@ writes the result back into the sheet.
 ## Layout
 
 Everything the automation reads or writes lives next to the entry
-point, which is the repository root when run from source and the
-folder holding `VeleroAutomation.exe` once built.
+point, which is the repository root when run from source with
+`VeleroAutomation.py` and the folder holding `VeleroAutomation.exe`
+once built.
 
 ```
 VeleroAutomation.exe      the automation
@@ -24,7 +25,7 @@ From source:
 
 ```bash
 pip install -r requirements.txt
-python run.py
+python VeleroAutomation.py
 ```
 
 As an executable (Windows):
@@ -97,22 +98,43 @@ so a run has to survive that.
 ## Log output
 
 ```
-YYYY-MM-DD HH:MM:SS | INFO    | Starting Velero Automation...
-YYYY-MM-DD HH:MM:SS | INFO    | Started by         : DOMAIN\USER
+Enter the date:
+
+YYYY-MM-DD HH:MM:SS | INFO    | Validating the sheet
+YYYY-MM-DD HH:MM:SS | INFO    | Starting Velero Automation for DD-MM-YYYY...
 YYYY-MM-DD HH:MM:SS | INFO    | Using Excel file   : FILE_PATH
 YYYY-MM-DD HH:MM:SS | INFO    | Excel Table        : TABLE_NAME
 YYYY-MM-DD HH:MM:SS | DEBUG   | Excel file, table and columns validated
-YYYY-MM-DD HH:MM:SS | DEBUG   | Pagerduty API is accessible
 YYYY-MM-DD HH:MM:SS | INFO    | NAMESPACE | Initialized process
-YYYY-MM-DD HH:MM:SS | SUCCESS | NAMESPACE | Incident Triggered to CALLER - INCIDENT ID
+YYYY-MM-DD HH:MM:SS | SUCCESS | NAMESPACE | Incident Triggered
 YYYY-MM-DD HH:MM:SS | INFO    | NAMESPACE | Sheet updated
 YYYY-MM-DD HH:MM:SS | SKIPPED | NAMESPACE | Already processed on INCIDENT_DATE
 YYYY-MM-DD HH:MM:SS | ERROR   | NAMESPACE | REASON
-YYYY-MM-DD HH:MM:SS | INFO    | Velero automation completed!
 YYYY-MM-DD HH:MM:SS | INFO    | Summary   | Processed: XX :::: Skipped: XX :::: Failed: XX
+YYYY-MM-DD HH:MM:SS | INFO    | Velero automation completed!
+YYYY-MM-DD HH:MM:SS | INFO    | Bye!
+
+
+
+Enter the date:
+
+YYYY-MM-DD HH:MM:SS | INFO    | Validating the sheet
+YYYY-MM-DD HH:MM:SS | ERROR   | No event found for DD-MM-YYYY
+YYYY-MM-DD HH:MM:SS | INFO    | Velero automation completed!
 YYYY-MM-DD HH:MM:SS | INFO    | Bye!
 ```
 
 The log file keeps the same lines plus tracebacks and a few
 details left off the console. Yesterday's file is renamed to
 `velero-automation-YYYY-MM-DD.log` on the first run of a new day.
+
+
+Enter the date:
+Info      | Running veloro backup for DD-MM-YYYY
+prod-ns   | Initialized process
+prod-ns   | Incident Triggered - prod-ns-velero-backup-issue
+prod-ns   | Sheet updated
+Summary   | Processed: 3 :::: Skipped: 1 :::: Failed: 0
+
+778b8e1d472f4001c034a316b7e7b912
+a4357af44fd24c00d055b70b9ad11893

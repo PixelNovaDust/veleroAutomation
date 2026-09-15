@@ -2,11 +2,12 @@ import time
 
 import requests
 
-from app.logger import file_only
 from app.paths import has_unresolved_variable
 
 
 RETRYABLE_STATUS_CODES = (429, 500, 502, 503, 504)
+
+EVENTS_URL = "https://events.pagerduty.com/v2/enqueue"
 
 
 def _number(value, default, cast=int):
@@ -36,14 +37,18 @@ class PagerDutyClient:
         pd_config = config["pagerduty"]
 
         self.enabled = pd_config.get("enabled", False)
-        self.base_url = pd_config.get(
-            "base_url",
-            "https://api.pagerduty.com"
+        self.events_url = pd_config.get(
+            "events_url",
+            EVENTS_URL
         ).rstrip("/")
 
-        self.api_token = pd_config.get("api_token")
-        self.urgency = pd_config.get("urgency", "low")
-        self.priority_id = pd_config.get("priority_id")
+        self.routing_key = pd_config.get("routing_key")
+        self.runbook = pd_config.get("runbook", "")
+        self.alert_name_slug = pd_config.get(
+            "alert_name_slug",
+            "velero-backup-issue"
+        )
+        self.severity = pd_config.get("severity", "critical")
 
         self.timeout_seconds = _number(
             pd_config.get("timeout_seconds"),
@@ -65,24 +70,20 @@ class PagerDutyClient:
 
         # An unset environment variable leaves the placeholder
         # behind, which would otherwise surface as a puzzling
-        # HTTP 401 much later in the run.
-        if has_unresolved_variable(self.api_token):
+        # HTTP error much later in the run.
+        if has_unresolved_variable(self.routing_key):
 
             raise PagerDutyError(
-                "PagerDuty API token is not set. The environment "
-                "variable in pagerduty.api_token ({}) is empty "
+                "PagerDuty routing key is not set. The environment "
+                "variable in pagerduty.routing_key ({}) is empty "
                 "on this machine.".format(
-                    self.api_token
+                    self.routing_key
                 )
             )
 
         self.session = requests.Session()
 
         self.session.headers.update({
-            "Authorization": "Token token={}".format(
-                self.api_token
-            ),
-            "Accept": "application/vnd.pagerduty+json;version=2",
             "Content-Type": "application/json"
         })
 
@@ -97,58 +98,18 @@ class PagerDutyClient:
 
             return True
 
-        if not self.api_token:
+        if not self.routing_key:
             raise PagerDutyError(
-                "PagerDuty API token is not configured."
+                "PagerDuty routing key is not configured."
             )
 
-        try:
+        self.logger.debug(
+            "PagerDuty Events API configuration validated"
+        )
 
-            response = self.request(
-                "GET",
-                "/users/me"
-            )
+        return True
 
-            user = response.json().get("user")
-
-            if not user:
-                raise PagerDutyError(
-                    "PagerDuty API responded successfully, "
-                    "but user information was not returned."
-                )
-
-            self.logger.debug(
-                "Pagerduty API is accessible"
-            )
-
-            self.logger.debug(
-                "PagerDuty token belongs to %s <%s>",
-                user.get("name"),
-                user.get("email"),
-                extra=file_only()
-            )
-
-            return True
-
-        except PagerDutyError:
-            raise
-
-        except Exception as error:
-
-            self.logger.exception(
-                "PagerDuty API validation failed."
-            )
-
-            raise PagerDutyError(
-                "PagerDuty API validation failed: {}".format(
-                    error
-                )
-            )
-
-
-    def request(self, method, endpoint, **kwargs):
-
-        url = self.base_url + endpoint
+    def enqueue(self, payload):
 
         attempts = max(1, self.max_retries)
 
@@ -159,10 +120,10 @@ class PagerDutyClient:
             try:
 
                 response = self.session.request(
-                    method,
-                    url,
-                    timeout=self.timeout_seconds,
-                    **kwargs
+                    "POST",
+                    self.events_url,
+                    json=payload,
+                    timeout=self.timeout_seconds
                 )
 
             except requests.RequestException as error:
@@ -180,7 +141,7 @@ class PagerDutyClient:
             if last_attempt:
                 break
 
-            if not self._should_retry(method, response):
+            if not self._should_retry(response):
                 break
 
             self._pause(response, attempt, attempts)
@@ -190,33 +151,37 @@ class PagerDutyClient:
             try:
                 body = response.json()
                 message = body.get(
-                    "error",
-                    response.text
+                    "message",
+                    body.get("error", response.text)
                 )
             except ValueError:
                 message = response.text
 
             raise PagerDutyError(
-                "PagerDuty API returned HTTP {}: {}".format(
+                "PagerDuty Events API returned HTTP {}: {}".format(
                     response.status_code,
                     message
                 )
             )
 
-        return response
+        try:
+            return response.json()
 
-    def _should_retry(self, method, response):
+        except ValueError as error:
+
+            raise PagerDutyError(
+                "PagerDuty Events API returned an invalid "
+                "response: {}".format(error)
+            )
+
+    def _should_retry(self, response):
         """
         Rate limiting is always safe to retry. A server error is
-        only retried for reads, because a repeated POST could
-        raise the same incident twice.
+        only retried for POST when PagerDuty asks us to wait.
         """
 
         if response.status_code == 429:
             return True
-
-        if str(method).upper() != "GET":
-            return False
 
         return response.status_code in RETRYABLE_STATUS_CODES
 

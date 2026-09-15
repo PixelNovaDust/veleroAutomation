@@ -1,6 +1,12 @@
+from app.dates import normalize_date
 from app.pagerduty.client import PagerDutyError
-from app.pagerduty.users import PagerDutyUsers
-from app.pagerduty.services import PagerDutyServices
+
+
+def build_dedup_key(namespace, alert_name_slug):
+    return "{}-{}".format(
+        namespace,
+        alert_name_slug
+    )
 
 
 class PagerDutyIncidents:
@@ -10,21 +16,11 @@ class PagerDutyIncidents:
         self.client = client
         self.logger = logger
 
-        self.users = PagerDutyUsers(
-            client,
-            logger
-        )
-
-        self.services = PagerDutyServices(
-            client,
-            logger
-        )
-
     def create_incident(
         self,
-        caller,
         namespace,
-        description
+        event_date,
+        description=None
     ):
 
         if not self.client.enabled:
@@ -34,85 +30,75 @@ class PagerDutyIncidents:
             )
 
             return {
-                "success": True,
-                "incident_id": None
+                "status": "failed",
+                "message": "PagerDuty is disabled.",
+                "dedup_key": None
             }
 
-        if not self.client.api_token:
+        if not self.client.routing_key:
 
             raise PagerDutyError(
-                "PagerDuty API token is not configured."
+                "PagerDuty routing key is not configured."
             )
 
-        user = self.users.find_user(caller)
+        namespace = str(namespace or "").strip()
+        formatted_event_date = normalize_date(event_date) or ""
+        alert_name_slug = self.client.alert_name_slug
 
-        service = self.services.find_service(namespace)
+        dedup_key = build_dedup_key(
+            namespace,
+            alert_name_slug
+        )
 
-        incident = {
-            "type": "incident",
-
-            "title": "Velero backup issue for {}".format(
-                namespace
-            ),
-
-            "service": {
-                "id": service["id"],
-                "type": "service_reference"
-            },
-
-            "urgency": self.client.urgency,
-
-            "status": "triggered",
-
-            "assignments": [
-                {
-                    "assignee": {
-                        "id": user["id"],
-                        "type": "user_reference"
-                    }
-                }
-            ],
-
-            "body": {
-                "type": "incident_body",
-                "details": description or
-                "Velero backup issue for {}".format(
+        payload = {
+            "routing_key": self.client.routing_key,
+            "event_action": "trigger",
+            "dedup_key": dedup_key,
+            "payload": {
+                "summary": "Velero issue for {}".format(
                     namespace
-                )
+                ),
+                "source": namespace,
+                "severity": self.client.severity,
+                "custom_details": {
+                    "namespace": namespace,
+                    "event_date": formatted_event_date,
+                    "event_host": namespace,
+                    "runbook": self.client.runbook
+                }
             }
         }
 
-        if self.client.priority_id:
-
-            incident["priority"] = {
-                "id": self.client.priority_id,
-                "type": "priority_reference"
-            }
-
-        response = self.client.request(
-            "POST",
-            "/incidents",
-            json={
-                "incident": incident
-            }
+        self.logger.debug(
+            "Submitting PagerDuty event for %s "
+            "(dedup_key=%s, event_date=%s)",
+            namespace,
+            dedup_key,
+            formatted_event_date
         )
 
-        incident_data = response.json().get(
-            "incident"
-        )
+        response_data = self.client.enqueue(payload)
 
-        if not incident_data:
+        status = response_data.get("status")
+        message = response_data.get("message", "")
 
-            raise PagerDutyError(
-                "PagerDuty did not return incident details."
-            )
+        if status != "success":
 
-        incident_id = incident_data.get("id")
+            return {
+                "status": status or "failed",
+                "message": message or str(response_data),
+                "dedup_key": None,
+                "response": response_data
+            }
+
+        response_dedup_key = response_data.get("dedup_key")
+
+        if not response_dedup_key:
+            response_dedup_key = dedup_key
 
         return {
-            "success": True,
-            "incident_id": incident_id,
-            "incident_number": incident_data.get(
-                "incident_number"
-            )
+            "status": "success",
+            "message": message,
+            "dedup_key": response_dedup_key,
+            "response": response_data
         }

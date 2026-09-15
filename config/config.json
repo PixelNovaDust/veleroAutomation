@@ -17,6 +17,9 @@
     "processing": {
         "processed_value": "Yes",
         "failed_value": "No",
+        "default_date": "",
+        "failed_retry_attempts": 3,
+        "failed_retry_delay_seconds": 2,
         "ledger": {
             "enabled": true,
             "file_path": "data/processed-ledger.json",
@@ -36,10 +39,11 @@
     },
     "pagerduty": {
         "enabled": true,
-        "base_url": "https://api.pagerduty.com",
-        "api_token": "%VELERO_PAGERDUTY_TOKEN%",
-        "urgency": "low",
-        "priority_id": "",
+        "events_url": "https://events.pagerduty.com/v2/enqueue",
+        "routing_key": "%VELERO_PAGERDUTY_ROUTING_KEY%",
+        "runbook": "",
+        "alert_name_slug": "velero-backup-issue",
+        "severity": "critical",
         "timeout_seconds": 30,
         "max_retries": 3,
         "retry_delay_seconds": 2

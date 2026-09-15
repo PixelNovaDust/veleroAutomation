@@ -36,6 +36,9 @@ DEFAULT_CONFIG = {
     "processing": {
         "processed_value": "Yes",
         "failed_value": "No",
+        "default_date": "",
+        "failed_retry_attempts": 3,
+        "failed_retry_delay_seconds": 2,
         "ledger": {
             "enabled": True,
             "file_path": "data/processed-ledger.json",
@@ -58,10 +61,11 @@ DEFAULT_CONFIG = {
 
     "pagerduty": {
         "enabled": True,
-        "base_url": "https://api.pagerduty.com",
-        "api_token": "",
-        "urgency": "low",
-        "priority_id": "",
+        "events_url": "https://events.pagerduty.com/v2/enqueue",
+        "routing_key": "",
+        "runbook": "",
+        "alert_name_slug": "velero-backup-issue",
+        "severity": "critical",
         "timeout_seconds": 30,
         "max_retries": 3,
         "retry_delay_seconds": 2

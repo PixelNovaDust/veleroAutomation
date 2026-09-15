@@ -129,12 +129,12 @@ class ProcessedLedger:
         self,
         namespace,
         date_value,
-        incident_id,
+        dedup_key,
         incident_date,
         source="automation"
     ):
 
-        if not self.enabled or not incident_id:
+        if not self.enabled or not dedup_key:
             return
 
         key = self.build_key(namespace, date_value)
@@ -148,7 +148,7 @@ class ProcessedLedger:
         self.entries[key] = {
             "namespace": str(namespace or "").strip(),
             "date": str(date_value or "").strip(),
-            "incident_id": str(incident_id),
+            "dedup_key": str(dedup_key),
             "incident_date": str(incident_date or ""),
             "recorded_at": datetime.now().strftime(DATE_FORMAT),
             "recorded_by": get_current_user(),

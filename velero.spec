@@ -25,7 +25,7 @@ project_root = os.path.abspath(SPECPATH)
 
 
 analysis = Analysis(
-    ["run.py"],
+    ["VeleroAutomation.py"],
     pathex=[project_root],
     binaries=[],
     datas=[

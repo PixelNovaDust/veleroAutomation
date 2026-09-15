@@ -1,7 +1,8 @@
 import os
 import sys
 
-from app.logger import format_label
+from app.dates import format_display_date, normalize_date
+from app.logger import file_only, format_label
 from app.system import get_current_user
 
 
@@ -25,14 +26,15 @@ def is_interactive():
 
 def startup(logger):
 
-    logger.info(
+    logger.debug(
         "Starting Velero Automation..."
     )
 
-    logger.info(
+    logger.debug(
         "%s: %s",
         format_label("Started by"),
-        get_current_user()
+        get_current_user(),
+        extra=file_only()
     )
 
 
@@ -90,6 +92,73 @@ def make_confirm(logger, default=False):
         return decision
 
     return confirm
+
+
+def prompt_target_date(config=None):
+    """
+    Ask the engineer which workbook date to process before the
+    sheet is validated or any PagerDuty events are raised.
+    """
+
+    config = config or {}
+
+    fallback = (
+        config
+        .get("processing", {})
+        .get("default_date")
+    )
+
+    if not is_interactive():
+
+        normalized = normalize_date(fallback)
+
+        if not normalized:
+            raise ValueError(
+                "No console is available to enter a date and "
+                "processing.default_date is not configured."
+            )
+
+        return normalized
+
+    print()
+    print("Enter the date:")
+    print()
+
+    while True:
+
+        try:
+            answer = input().strip()
+
+        except (EOFError, KeyboardInterrupt):
+
+            print()
+
+            raise ValueError(
+                "Date entry was cancelled."
+            )
+
+        if not answer:
+            print("A date is required.")
+            continue
+
+        normalized = normalize_date(answer)
+
+        if normalized:
+            return normalized
+
+        print(
+            "Enter a valid date, for example 15-03-2026 or "
+            "2026-03-15."
+        )
+
+
+def log_run_start(logger, target_date):
+
+    logger.info(
+        "Starting Velero Automation for {}...".format(
+            format_display_date(target_date)
+        )
+    )
 
 
 def wait_for_exit(enabled=True):
