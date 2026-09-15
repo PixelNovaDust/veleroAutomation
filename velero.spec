@@ -3,11 +3,11 @@
 # Build with:
 #     pyinstaller velero.spec
 #
-# The result is dist/VeleroAutomation.exe. config, logs, data and
+# The result is dist/VeloroAutomation.exe. config, logs, data and
 # backups are read next to the executable at run time, so the
 # folder that gets copied to OneDrive looks like this:
 #
-#     VeleroAutomation.exe
+#     VeloroAutomation.exe
 #     config/config.json
 #     logs/
 #     data/
@@ -25,7 +25,7 @@ project_root = os.path.abspath(SPECPATH)
 
 
 analysis = Analysis(
-    ["VeleroAutomation.py"],
+    ["VeloroAutomation.py"],
     pathex=[project_root],
     binaries=[],
     datas=[
@@ -63,7 +63,7 @@ executable = EXE(
     analysis.zipfiles,
     analysis.datas,
     [],
-    name="VeleroAutomation",
+    name="VeloroAutomation",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

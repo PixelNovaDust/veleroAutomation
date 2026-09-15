@@ -8,11 +8,11 @@ writes the result back into the sheet.
 
 Everything the automation reads or writes lives next to the entry
 point, which is the repository root when run from source with
-`VeleroAutomation.py` and the folder holding `VeleroAutomation.exe`
+`VeloroAutomation.py` and the folder holding `VeloroAutomation.exe`
 once built.
 
 ```
-VeleroAutomation.exe      the automation
+VeloroAutomation.exe      the automation
 config/config.json        settings, edited by hand
 logs/                     one log file per day
 data/                     record of incidents already raised
@@ -25,7 +25,7 @@ From source:
 
 ```bash
 pip install -r requirements.txt
-python VeleroAutomation.py
+python VeloroAutomation.py
 ```
 
 As an executable (Windows):
@@ -34,7 +34,7 @@ As an executable (Windows):
 pyinstaller velero.spec
 ```
 
-Copy `dist/VeleroAutomation.exe` and the `config` folder into the
+Copy `dist/VeloroAutomation.exe` and the `config` folder into the
 shared OneDrive folder. `logs`, `data` and `backups` are created
 on first run.
 

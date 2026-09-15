@@ -2,13 +2,13 @@
 Entry point for source runs and the PyInstaller executable.
 
 Run from source:
-    python VeleroAutomation.py
+    python VeloroAutomation.py
 
 Build executable:
     pyinstaller velero.spec
 
 When frozen, config, logs, data, backups and the ledger are read
-and written next to VeleroAutomation.exe so edited config.json
+and written next to VeloroAutomation.exe so edited config.json
 and runtime data survive rebuilds.
 """
 
